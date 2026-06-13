@@ -48,6 +48,8 @@ export interface GameState {
   };
   nobles: Noble[];
   turn: number;
+  selectedTokens: Record<Exclude<GemColor, "gold">, number>;
+  isDiscardingMode: boolean; // 토큰 반납 모드 여부
   isGameOver: boolean;
   winner: Player | null;
   lastRound: boolean;
