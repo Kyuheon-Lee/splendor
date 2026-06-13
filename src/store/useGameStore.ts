@@ -21,6 +21,7 @@ interface GameActions {
   cancelSelection: () => void;
   confirmTokens: () => void;
   discardToken: (color: GemColor) => void;
+  reserveCard: (card: Card) => void; // 카드 예약 기능 추가
 }
 
 const initialPlayer = (id: number, name: string): Player => ({
@@ -206,6 +207,86 @@ export const useGameStore = create<GameState & GameActions>()(
             players: updatedPlayers,
             tokens: updatedBank
           });
+        }
+      },
+
+      /**
+       * 카드 예약 로직
+       * 1. 예약 가능 여부 확인 (최대 3장 제한)
+       * 2. 카드 이동 (보드 -> 플레이어 손)
+       * 3. 황금 토큰(마력) 증정 (남아있을 때만)
+       * 4. 보드 채우기
+       * 5. 토큰 10개 초과 시 반납 모드 진입
+       */
+      reserveCard: (card: Card) => {
+        const { players, currentPlayerIndex, tokens, board, decks, turn } = get();
+        const currentPlayer = players[currentPlayerIndex];
+
+        // [체크] 이미 3장을 예약했다면 추가 예약 불가
+        if (currentPlayer.reservedCards.length >= 3) {
+          return;
+        }
+
+        const updatedPlayers = [...players];
+        const updatedPlayer = { 
+          ...currentPlayer, 
+          tokens: { ...currentPlayer.tokens },
+          reservedCards: [...currentPlayer.reservedCards, card]
+        };
+
+        const updatedBank = { ...tokens };
+
+        // [마력 증정] 은행에 황금 토큰이 남아있다면 1개 가져옴
+        if (updatedBank.gold > 0) {
+          updatedPlayer.tokens.gold += 1;
+          updatedBank.gold -= 1;
+        }
+
+        updatedPlayers[currentPlayerIndex] = updatedPlayer;
+
+        // [보드 업데이트] 구매 로직과 유사하게 빈 자리 채우기
+        const updatedBoard = { ...board };
+        const levelBoard = [...updatedBoard[card.level]];
+        const cardIndex = levelBoard.findIndex(c => c.id === card.id);
+        
+        if (cardIndex !== -1) {
+          const updatedDecks = { ...decks };
+          const levelDeck = [...updatedDecks[card.level]];
+          
+          if (levelDeck.length > 0) {
+            const nextCard = levelDeck.shift()!;
+            levelBoard[cardIndex] = nextCard;
+            updatedDecks[card.level] = levelDeck;
+          } else {
+            levelBoard.splice(cardIndex, 1);
+          }
+          
+          updatedBoard[card.level] = levelBoard;
+
+          // 10개 보유 제한 체크
+          const totalTokens = Object.values(updatedPlayer.tokens).reduce((a, b) => (a as number) + (b as number), 0);
+          
+          if (totalTokens > 10) {
+            // 반납 모드 진입
+            set({
+              players: updatedPlayers,
+              tokens: updatedBank,
+              board: updatedBoard,
+              decks: updatedDecks,
+              isDiscardingMode: true
+            });
+          } else {
+            // 즉시 턴 종료
+            const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+            set({
+              players: updatedPlayers,
+              tokens: updatedBank,
+              board: updatedBoard,
+              decks: updatedDecks,
+              currentPlayerIndex: nextPlayerIndex,
+              turn: nextPlayerIndex === 0 ? turn + 1 : turn
+            });
+          }
         }
       },
     }),
