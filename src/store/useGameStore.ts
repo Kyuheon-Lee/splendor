@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { GameState, Player, GemColor, Card, Noble } from '@/types/game';
+import { ALL_CARDS } from '@/data/cards';
+
+// 셔플 유틸리티 함수
+const shuffle = <T>(array: T[]): T[] => {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+};
 
 interface GameActions {
   startNewGame: () => void;
@@ -36,7 +47,26 @@ export const useGameStore = create<GameState & GameActions>()(
     (set) => ({
       ...initialState,
       startNewGame: () => {
-        set({ ...initialState, turn: 1 });
+        // 1. 레벨별로 카드 분류 및 셔플
+        const l1Cards = shuffle(ALL_CARDS.filter(c => c.level === 1));
+        const l2Cards = shuffle(ALL_CARDS.filter(c => c.level === 2));
+        const l3Cards = shuffle(ALL_CARDS.filter(c => c.level === 3));
+
+        // 2. 보드에 4장씩 배치하고 남은 카드는 덱으로
+        set({
+          ...initialState,
+          decks: {
+            1: l1Cards.slice(4),
+            2: l2Cards.slice(4),
+            3: l3Cards.slice(4),
+          },
+          board: {
+            1: l1Cards.slice(0, 4),
+            2: l2Cards.slice(0, 4),
+            3: l3Cards.slice(0, 4),
+          },
+          turn: 1
+        });
       },
 
       resetGame: () => set(initialState),
