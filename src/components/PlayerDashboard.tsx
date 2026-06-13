@@ -1,11 +1,26 @@
 "use client";
 
 import { useGameStore } from "@/store/useGameStore";
-import { GemColor } from "@/types/game";
+import { Card, GemColor } from "@/types/game";
 import { ELEMENT_THEMES } from "@/constants/themes";
 
 export default function PlayerDashboard() {
-  const { players, currentPlayerIndex, isDiscardingMode, discardToken } = useGameStore();
+  const { players, currentPlayerIndex, isDiscardingMode, discardToken, buyCard } = useGameStore();
+
+  // 카드 구매 가능 여부 확인 함수 (내부 재사용)
+  const canBuyCard = (player: any, card: Card) => {
+    let requiredGold = 0;
+    const costEntries = Object.entries(card.cost) as [Exclude<GemColor, "gold">, number][];
+
+    for (const [color, amount] of costEntries) {
+      const bonus = player.cards.filter((c: Card) => c.gemColor === color).length;
+      const netCost = Math.max(0, amount - bonus);
+      if (netCost > player.tokens[color]) {
+        requiredGold += (netCost - player.tokens[color]);
+      }
+    }
+    return player.tokens.gold >= requiredGold;
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -25,19 +40,48 @@ export default function PlayerDashboard() {
               : 'bg-zinc-800/40 border-zinc-700 opacity-60'
             }`}
           >
-            {/* 1. 마스터 정보 영역 */}
+            {/* 1. 마스터 정보 및 보너스 현황 */}
             <div className="flex justify-between items-start relative z-20">
               <div className="flex flex-col">
                 <div className="flex items-center gap-2 mb-1">
                    <div className={`w-2 h-2 rounded-full ${isCurrent ? 'bg-amber-500 animate-pulse' : 'bg-zinc-600'}`} />
                    <span className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em]">Elemental Master</span>
                 </div>
-                <span className={`text-xl font-black ${isCurrent ? 'text-white' : 'text-zinc-400'}`}>{player.name}</span>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xl font-black ${isCurrent ? 'text-white' : 'text-zinc-400'}`}>{player.name}</span>
+                  
+                  {/* 영구 보너스 표시 (구매한 카드 개수) */}
+                  <div className="flex gap-1 items-center bg-black/30 px-2 py-1 rounded-lg border border-white/5 shadow-inner">
+                    {Object.entries(ELEMENT_THEMES).map(([color, theme]) => {
+                      const bonusCount = player.cards.filter(c => c.gemColor === color).length;
+                      if (bonusCount === 0) return null;
+                      return (
+                        <div key={color} className="flex items-center gap-0.5" title={`${theme.name} Bonus: ${bonusCount}`}>
+                           <span className="text-xs">{theme.icons[0]}</span>
+                           <span className="text-[10px] font-black text-amber-500">{bonusCount}</span>
+                        </div>
+                      );
+                    })}
+                    {player.cards.length === 0 && <span className="text-[9px] text-zinc-600 font-bold uppercase italic tracking-tighter">No Bonuses</span>}
+                  </div>
+                </div>
               </div>
               
-              <div className="flex flex-col items-end bg-zinc-900/50 px-3 py-1.5 rounded-2xl border border-white/5">
-                <span className="text-[10px] text-zinc-500 font-bold uppercase mb-0.5">Victory Points</span>
-                <span className="text-3xl font-black text-amber-500 leading-none drop-shadow-lg">{player.score}</span>
+              <div className="flex flex-col items-end">
+                <div className="bg-zinc-900/50 px-3 py-1.5 rounded-2xl border border-white/5 mb-1">
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase mb-0.5 block text-right">Victory Points</span>
+                  <div className="flex items-center gap-2">
+                    {/* 방문한 귀족 표시 */}
+                    {player.nobles.length > 0 && (
+                      <div className="flex -space-x-2 mr-1">
+                         {player.nobles.map((noble, i) => (
+                           <div key={i} className="w-6 h-6 bg-zinc-100 rounded-full border border-zinc-300 flex items-center justify-center text-xs shadow-lg" title="Noble Visited (+3 Points)">👑</div>
+                         ))}
+                      </div>
+                    )}
+                    <span className="text-3xl font-black text-amber-500 leading-none drop-shadow-lg">{player.score}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -107,30 +151,48 @@ export default function PlayerDashboard() {
                   )}
                   {player.reservedCards.map((card) => {
                     const theme = ELEMENT_THEMES[card.gemColor];
+                    const affordable = canBuyCard(player, card);
+                    
                     return (
                       <div 
                         key={card.id} 
-                        className={`w-16 h-22 rounded-xl ${theme.bg} flex flex-col items-center justify-between p-2 shadow-2xl border-2 border-white/20 relative group overflow-hidden cursor-pointer hover:-translate-y-2 transition-transform duration-300`}
+                        onClick={() => isCurrent && !isDiscardingMode && affordable && buyCard(card, true)}
+                        className={`w-20 h-28 rounded-xl ${theme.bg} flex flex-col items-center justify-between p-2 shadow-2xl border-2 transition-all duration-300 relative group overflow-hidden active:scale-95
+                          ${isCurrent && affordable 
+                            ? 'cursor-pointer hover:-translate-y-2 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.4)] ring-2 ring-emerald-400/20' 
+                            : 'cursor-default border-white/20 opacity-60 grayscale-[0.3]'}
+                        `}
                       >
-                        <div className="absolute top-0.5 left-1.5 flex flex-col">
-                           <span className={`text-sm font-black italic ${card.gemColor === 'white' ? 'text-zinc-800' : 'text-white'} drop-shadow-md`}>
+                        {/* 상단: 점수 및 생산 아이콘 */}
+                        <div className="w-full flex justify-between items-start z-10">
+                           <span className={`text-lg font-black italic leading-none ${card.gemColor === 'white' ? 'text-zinc-800' : 'text-white'} drop-shadow-md`}>
                              {card.points > 0 ? card.points : ""}
                            </span>
+                           <span className="text-sm opacity-80">{theme.icons[0]}</span>
                         </div>
                         
-                        <span className="text-3xl drop-shadow-xl my-auto">{theme.icons[card.level - 1]}</span>
+                        {/* 중앙: 대형 진화 아이콘 */}
+                        <span className="text-3xl drop-shadow-2xl my-1 group-hover:scale-110 transition-transform">{theme.icons[card.level - 1]}</span>
                         
-                        {/* 레벨 표시기 */}
-                        <div className="flex gap-0.5 mt-auto w-full justify-center opacity-30">
-                          {[...Array(card.level)].map((_, i) => (
-                            <div key={i} className="w-1 h-1 rounded-full bg-black" />
+                        {/* 하단: 실시간 비용 정보 (항상 표시) */}
+                        <div className="w-full bg-black/20 rounded-lg p-1 grid grid-cols-2 gap-x-1 gap-y-0.5 mt-auto border border-white/5">
+                          {Object.entries(card.cost).map(([color, amount]) => (
+                            <div key={color} className="flex items-center gap-1">
+                               <div className={`w-2 h-2 rounded-full ${
+                                 color === 'white' ? 'bg-slate-100' : 
+                                 color === 'blue' ? 'bg-blue-500' :
+                                 color === 'green' ? 'bg-emerald-500' :
+                                 color === 'red' ? 'bg-orange-600' : 'bg-zinc-900'
+                               }`} />
+                               <span className="text-[9px] font-black text-white/90">{amount}</span>
+                            </div>
                           ))}
                         </div>
 
-                        {/* 클릭 유도 오버레이 */}
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-1">
-                           <span className="text-[8px] text-white font-black uppercase tracking-tighter">Buy Now</span>
-                        </div>
+                        {/* 구매 가능 알림 (마법진 효과) */}
+                        {isCurrent && affordable && (
+                          <div className="absolute inset-0 bg-emerald-500/10 animate-pulse pointer-events-none" />
+                        )}
                       </div>
                     );
                   })}

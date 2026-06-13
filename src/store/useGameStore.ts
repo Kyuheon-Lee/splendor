@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { GameState, Player, GemColor, Card, Noble } from '@/types/game';
 import { ALL_CARDS } from '@/data/cards';
+import { ALL_NOBLES } from '@/data/nobles';
 
 // 셔플 유틸리티 함수
 const shuffle = <T>(array: T[]): T[] => {
@@ -21,7 +22,9 @@ interface GameActions {
   cancelSelection: () => void;
   confirmTokens: () => void;
   discardToken: (color: GemColor) => void;
-  reserveCard: (card: Card) => void; // 카드 예약 기능 추가
+  reserveCard: (card: Card) => void;
+  buyCard: (card: Card, isReserved?: boolean) => void;
+  checkNobles: (player: Player) => { updatedPlayer: Player; updatedNobles: Noble[] } | null;
 }
 
 const initialPlayer = (id: number, name: string): Player => ({
@@ -59,6 +62,9 @@ export const useGameStore = create<GameState & GameActions>()(
         const l2Cards = shuffle(ALL_CARDS.filter(c => c.level === 2));
         const l3Cards = shuffle(ALL_CARDS.filter(c => c.level === 3));
 
+        // 2인 규칙: 귀족 타일 3개
+        const selectedNobles = shuffle(ALL_NOBLES).slice(0, 3);
+
         set({
           ...initialState,
           decks: {
@@ -71,6 +77,7 @@ export const useGameStore = create<GameState & GameActions>()(
             2: l2Cards.slice(0, 4),
             3: l3Cards.slice(0, 4),
           },
+          nobles: selectedNobles,
           turn: 1
         });
       },
@@ -79,42 +86,52 @@ export const useGameStore = create<GameState & GameActions>()(
 
       setCurrentPlayerIndex: (index) => set({ currentPlayerIndex: index }),
 
-      /**
-       * 토큰 선택 로직 (상세 주석 처리)
-       */
+      checkNobles: (player: Player) => {
+        const { nobles } = get();
+        const availableNobles = [...nobles];
+        
+        const bonuses: Record<string, number> = { white: 0, blue: 0, green: 0, red: 0, black: 0 };
+        player.cards.forEach(card => {
+          bonuses[card.gemColor]++;
+        });
+
+        const visitingNobleIndex = availableNobles.findIndex(noble => {
+          return Object.entries(noble.cost).every(([color, required]) => {
+            return bonuses[color] >= (required as number);
+          });
+        });
+
+        if (visitingNobleIndex !== -1) {
+          const noble = availableNobles[visitingNobleIndex];
+          const updatedPlayer = {
+            ...player,
+            nobles: [...player.nobles, noble],
+            score: player.score + noble.points
+          };
+          availableNobles.splice(visitingNobleIndex, 1);
+          return { updatedPlayer, updatedNobles: availableNobles };
+        }
+
+        return null;
+      },
+
       selectToken: (color) => {
         const { tokens, selectedTokens } = get();
         const availableInBank = tokens[color];
         const currentSelectedCount = selectedTokens[color];
 
-        // [CASE 1] 뱅크에 토큰이 없으면 가져올 수 없음
         if (availableInBank <= 0) return;
 
-        const totalSelectedCount = Object.values(selectedTokens).reduce((a, b) => a + b, 0);
-
-        // [CASE 2] 이미 같은 색을 2개 골랐다면 더 이상 선택 불가
+        const totalSelectedCount = Object.values(selectedTokens).reduce((a, b) => (a as number) + (b as number), 0);
         const hasDoubleSelection = Object.values(selectedTokens).some(count => count === 2);
-        if (hasDoubleSelection) return;
 
-        // [CASE 3] 이미 서로 다른 색 3개를 골랐다면 더 이상 선택 불가
+        if (hasDoubleSelection) return;
         if (totalSelectedCount === 3) return;
 
-        // [CASE 4] 지금 클릭한 토큰을 추가할 때의 규칙 검사
-        
-        // 4-1. 이미 1개를 고른 상태에서 같은 색을 또 고르려는 경우 (2개 가져오기 규칙)
         if (currentSelectedCount === 1) {
-          // 다른 색이 이미 섞여있으면 안 됨 (오직 이 색 하나만 골라져 있어야 함)
           if (totalSelectedCount > 1) return;
-          
-          // 2인 게임 규칙: 해당 색상 토큰이 4개 이상 남아있을 때만 2개 가져오기 가능
           if (availableInBank < 4) return;
         } 
-        
-        // 4-2. 다른 색을 추가하려는 경우 (3개 가져오기 규칙 진행 중)
-        else if (currentSelectedCount === 0) {
-          // 이미 3개를 채웠거나 (위에서 체크됨), 이미 2개를 고른 상태면 안 됨 (위에서 체크됨)
-          // 여기서는 통과
-        }
 
         set({
           selectedTokens: {
@@ -127,43 +144,49 @@ export const useGameStore = create<GameState & GameActions>()(
       cancelSelection: () => set({ selectedTokens: { white: 0, blue: 0, green: 0, red: 0, black: 0 } }),
 
       confirmTokens: () => {
-        const { selectedTokens, tokens, players, currentPlayerIndex, turn } = get();
+        const { selectedTokens, tokens, players, currentPlayerIndex, turn, checkNobles } = get();
         
         const updatedPlayers = [...players];
-        const currentPlayer = { 
+        let currentPlayer = { 
           ...updatedPlayers[currentPlayerIndex], 
           tokens: { ...updatedPlayers[currentPlayerIndex].tokens } 
         };
         
-        // 1. 플레이어에게 토큰 추가
         Object.entries(selectedTokens).forEach(([color, count]) => {
           currentPlayer.tokens[color as GemColor] += (count as number);
         });
+
+        // 귀족 체크
+        const nobleResult = checkNobles(currentPlayer);
+        let updatedNobles = get().nobles;
+        if (nobleResult) {
+          currentPlayer = nobleResult.updatedPlayer;
+          updatedNobles = nobleResult.updatedNobles;
+        }
+
         updatedPlayers[currentPlayerIndex] = currentPlayer;
 
-        // 2. 뱅크에서 토큰 차감
         const updatedBank = { ...tokens };
         Object.entries(selectedTokens).forEach(([color, count]) => {
           updatedBank[color as GemColor] -= (count as number);
         });
 
-        // 3. 보유량 체크 (10개 초과 여부)
         const totalAfterTaking = Object.values(currentPlayer.tokens).reduce((a, b) => (a as number) + (b as number), 0);
         
         if (totalAfterTaking > 10) {
-          // 10개를 넘으면 반납 모드 진입 (턴을 넘기지 않음)
           set({
             players: updatedPlayers,
             tokens: updatedBank,
+            nobles: updatedNobles,
             isDiscardingMode: true,
             selectedTokens: { white: 0, blue: 0, green: 0, red: 0, black: 0 }
           });
         } else {
-          // 10개 이하면 즉시 턴 종료
           const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
           set({
             players: updatedPlayers,
             tokens: updatedBank,
+            nobles: updatedNobles,
             currentPlayerIndex: nextPlayerIndex,
             selectedTokens: { white: 0, blue: 0, green: 0, red: 0, black: 0 },
             turn: nextPlayerIndex === 0 ? turn + 1 : turn
@@ -183,16 +206,13 @@ export const useGameStore = create<GameState & GameActions>()(
 
         if (currentPlayer.tokens[color] <= 0) return;
 
-        // 플레이어 토큰 차감 및 뱅크 반납
         currentPlayer.tokens[color] -= 1;
         const updatedBank = { ...tokens, [color]: (tokens[color] as number) + 1 };
         updatedPlayers[currentPlayerIndex] = currentPlayer;
 
-        // 다시 10개 이하인지 체크
         const currentTotal = Object.values(currentPlayer.tokens).reduce((a, b) => (a as number) + (b as number), 0);
         
         if (currentTotal <= 10) {
-          // 반납 완료 -> 턴 종료
           const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
           set({
             players: updatedPlayers,
@@ -202,7 +222,6 @@ export const useGameStore = create<GameState & GameActions>()(
             turn: nextPlayerIndex === 0 ? get().turn + 1 : get().turn
           });
         } else {
-          // 아직 더 버려야 함
           set({
             players: updatedPlayers,
             tokens: updatedBank
@@ -210,41 +229,35 @@ export const useGameStore = create<GameState & GameActions>()(
         }
       },
 
-      /**
-       * 카드 예약 로직
-       * 1. 예약 가능 여부 확인 (최대 3장 제한)
-       * 2. 카드 이동 (보드 -> 플레이어 손)
-       * 3. 황금 토큰(마력) 증정 (남아있을 때만)
-       * 4. 보드 채우기
-       * 5. 토큰 10개 초과 시 반납 모드 진입
-       */
       reserveCard: (card: Card) => {
-        const { players, currentPlayerIndex, tokens, board, decks, turn } = get();
+        const { players, currentPlayerIndex, tokens, board, decks, turn, checkNobles } = get();
         const currentPlayer = players[currentPlayerIndex];
 
-        // [체크] 이미 3장을 예약했다면 추가 예약 불가
-        if (currentPlayer.reservedCards.length >= 3) {
-          return;
-        }
+        if (currentPlayer.reservedCards.length >= 3) return;
 
         const updatedPlayers = [...players];
-        const updatedPlayer = { 
+        let updatedPlayer = { 
           ...currentPlayer, 
           tokens: { ...currentPlayer.tokens },
           reservedCards: [...currentPlayer.reservedCards, card]
         };
 
         const updatedBank = { ...tokens };
-
-        // [마력 증정] 은행에 황금 토큰이 남아있다면 1개 가져옴
         if (updatedBank.gold > 0) {
           updatedPlayer.tokens.gold += 1;
           updatedBank.gold -= 1;
         }
 
+        // 귀족 체크
+        const nobleResult = checkNobles(updatedPlayer);
+        let updatedNobles = get().nobles;
+        if (nobleResult) {
+          updatedPlayer = nobleResult.updatedPlayer;
+          updatedNobles = nobleResult.updatedNobles;
+        }
+
         updatedPlayers[currentPlayerIndex] = updatedPlayer;
 
-        // [보드 업데이트] 구매 로직과 유사하게 빈 자리 채우기
         const updatedBoard = { ...board };
         const levelBoard = [...updatedBoard[card.level]];
         const cardIndex = levelBoard.findIndex(c => c.id === card.id);
@@ -252,7 +265,6 @@ export const useGameStore = create<GameState & GameActions>()(
         if (cardIndex !== -1) {
           const updatedDecks = { ...decks };
           const levelDeck = [...updatedDecks[card.level]];
-          
           if (levelDeck.length > 0) {
             const nextCard = levelDeck.shift()!;
             levelBoard[cardIndex] = nextCard;
@@ -260,34 +272,120 @@ export const useGameStore = create<GameState & GameActions>()(
           } else {
             levelBoard.splice(cardIndex, 1);
           }
-          
           updatedBoard[card.level] = levelBoard;
 
-          // 10개 보유 제한 체크
           const totalTokens = Object.values(updatedPlayer.tokens).reduce((a, b) => (a as number) + (b as number), 0);
           
           if (totalTokens > 10) {
-            // 반납 모드 진입
             set({
               players: updatedPlayers,
               tokens: updatedBank,
               board: updatedBoard,
               decks: updatedDecks,
+              nobles: updatedNobles,
               isDiscardingMode: true
             });
           } else {
-            // 즉시 턴 종료
             const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
             set({
               players: updatedPlayers,
               tokens: updatedBank,
               board: updatedBoard,
               decks: updatedDecks,
+              nobles: updatedNobles,
               currentPlayerIndex: nextPlayerIndex,
               turn: nextPlayerIndex === 0 ? turn + 1 : turn
             });
           }
         }
+      },
+
+      buyCard: (card: Card, isReserved: boolean = false) => {
+        const { players, currentPlayerIndex, tokens, board, decks, turn, checkNobles } = get();
+        const currentPlayer = players[currentPlayerIndex];
+
+        const costEntries = Object.entries(card.cost) as [Exclude<GemColor, "gold">, number][];
+        let requiredGold = 0;
+        const tokenPayment: Partial<Record<GemColor, number>> = {};
+
+        for (const [color, totalRequired] of costEntries) {
+          const bonus = currentPlayer.cards.filter(c => c.gemColor === color).length;
+          const netCost = Math.max(0, totalRequired - bonus);
+          if (netCost > 0) {
+            const playerTokens = currentPlayer.tokens[color];
+            if (playerTokens >= netCost) {
+              tokenPayment[color] = netCost;
+            } else {
+              tokenPayment[color] = playerTokens;
+              requiredGold += (netCost - playerTokens);
+            }
+          }
+        }
+
+        if (currentPlayer.tokens.gold < requiredGold) return;
+
+        const updatedPlayers = [...players];
+        let updatedPlayer = { 
+          ...currentPlayer, 
+          tokens: { ...currentPlayer.tokens },
+          cards: [...currentPlayer.cards, card],
+          score: currentPlayer.score + card.points
+        };
+
+        if (isReserved) {
+          updatedPlayer.reservedCards = updatedPlayer.reservedCards.filter(c => c.id !== card.id);
+        }
+
+        const updatedBank = { ...tokens };
+        Object.entries(tokenPayment).forEach(([color, amount]) => {
+          updatedPlayer.tokens[color as GemColor] -= (amount as number);
+          updatedBank[color as GemColor] += (amount as number);
+        });
+        
+        if (requiredGold > 0) {
+          updatedPlayer.tokens.gold -= requiredGold;
+          updatedBank.gold += (requiredGold as number);
+        }
+
+        // 귀족 체크
+        const nobleResult = checkNobles(updatedPlayer);
+        let updatedNobles = get().nobles;
+        if (nobleResult) {
+          updatedPlayer = nobleResult.updatedPlayer;
+          updatedNobles = nobleResult.updatedNobles;
+        }
+
+        updatedPlayers[currentPlayerIndex] = updatedPlayer;
+
+        let updatedBoard = { ...board };
+        let updatedDecks = { ...decks };
+
+        if (!isReserved) {
+          const levelBoard = [...updatedBoard[card.level]];
+          const cardIndex = levelBoard.findIndex(c => c.id === card.id);
+          if (cardIndex !== -1) {
+            const levelDeck = [...updatedDecks[card.level]];
+            if (levelDeck.length > 0) {
+              const nextCard = levelDeck.shift()!;
+              levelBoard[cardIndex] = nextCard;
+              updatedDecks[card.level] = levelDeck;
+            } else {
+              levelBoard.splice(cardIndex, 1);
+            }
+            updatedBoard[card.level] = levelBoard;
+          }
+        }
+
+        const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+        set({
+          players: updatedPlayers,
+          tokens: updatedBank,
+          board: updatedBoard,
+          decks: updatedDecks,
+          nobles: updatedNobles,
+          currentPlayerIndex: nextPlayerIndex,
+          turn: nextPlayerIndex === 0 ? turn + 1 : turn
+        });
       },
     }),
     {
