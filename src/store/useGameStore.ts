@@ -25,6 +25,7 @@ interface GameActions {
   reserveCard: (card: Card) => void;
   buyCard: (card: Card, isReserved?: boolean) => void;
   checkNobles: (player: Player) => { updatedPlayer: Player; updatedNobles: Noble[] } | null;
+  nextTurn: () => void;
 }
 
 const initialPlayer = (id: number, name: string): Player => ({
@@ -86,6 +87,52 @@ export const useGameStore = create<GameState & GameActions>()(
 
       setCurrentPlayerIndex: (index) => set({ currentPlayerIndex: index }),
 
+      // 턴 종료 및 승리 체크 공통 로직
+      nextTurn: () => {
+        const { players, currentPlayerIndex, turn, lastRound, isGameOver } = get();
+        
+        if (isGameOver) return;
+
+        // 현재 플레이어가 15점 이상인지 체크
+        const currentPlayer = players[currentPlayerIndex];
+        let nextLastRound = lastRound;
+        if (currentPlayer.score >= 15) {
+          nextLastRound = true;
+        }
+
+        const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+        
+        // 라운드가 종료되었을 때 (마지막 플레이어의 턴이 끝났을 때)
+        if (nextPlayerIndex === 0) {
+          // 마지막 라운드였다면 게임 종료
+          if (nextLastRound) {
+            // 승자 결정 (최고점, 동점시 카드 적은 사람)
+            const winner = [...players].sort((a, b) => {
+              if (b.score !== a.score) return b.score - a.score;
+              return a.cards.length - b.cards.length;
+            })[0];
+
+            set({ 
+              isGameOver: true, 
+              winner: winner,
+              lastRound: nextLastRound
+            });
+            return;
+          }
+          
+          set({ 
+            currentPlayerIndex: nextPlayerIndex, 
+            turn: turn + 1,
+            lastRound: nextLastRound
+          });
+        } else {
+          set({ 
+            currentPlayerIndex: nextPlayerIndex,
+            lastRound: nextLastRound
+          });
+        }
+      },
+
       checkNobles: (player: Player) => {
         const { nobles } = get();
         const availableNobles = [...nobles];
@@ -144,7 +191,7 @@ export const useGameStore = create<GameState & GameActions>()(
       cancelSelection: () => set({ selectedTokens: { white: 0, blue: 0, green: 0, red: 0, black: 0 } }),
 
       confirmTokens: () => {
-        const { selectedTokens, tokens, players, currentPlayerIndex, turn, checkNobles } = get();
+        const { selectedTokens, tokens, players, currentPlayerIndex, checkNobles } = get();
         
         const updatedPlayers = [...players];
         let currentPlayer = { 
@@ -182,15 +229,13 @@ export const useGameStore = create<GameState & GameActions>()(
             selectedTokens: { white: 0, blue: 0, green: 0, red: 0, black: 0 }
           });
         } else {
-          const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
           set({
             players: updatedPlayers,
             tokens: updatedBank,
             nobles: updatedNobles,
-            currentPlayerIndex: nextPlayerIndex,
-            selectedTokens: { white: 0, blue: 0, green: 0, red: 0, black: 0 },
-            turn: nextPlayerIndex === 0 ? turn + 1 : turn
+            selectedTokens: { white: 0, blue: 0, green: 0, red: 0, black: 0 }
           });
+          get().nextTurn();
         }
       },
 
@@ -213,14 +258,12 @@ export const useGameStore = create<GameState & GameActions>()(
         const currentTotal = Object.values(currentPlayer.tokens).reduce((a, b) => (a as number) + (b as number), 0);
         
         if (currentTotal <= 10) {
-          const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
           set({
             players: updatedPlayers,
             tokens: updatedBank,
-            isDiscardingMode: false,
-            currentPlayerIndex: nextPlayerIndex,
-            turn: nextPlayerIndex === 0 ? get().turn + 1 : get().turn
+            isDiscardingMode: false
           });
+          get().nextTurn();
         } else {
           set({
             players: updatedPlayers,
@@ -230,7 +273,7 @@ export const useGameStore = create<GameState & GameActions>()(
       },
 
       reserveCard: (card: Card) => {
-        const { players, currentPlayerIndex, tokens, board, decks, turn, checkNobles } = get();
+        const { players, currentPlayerIndex, tokens, board, decks, checkNobles } = get();
         const currentPlayer = players[currentPlayerIndex];
 
         if (currentPlayer.reservedCards.length >= 3) return;
@@ -286,22 +329,20 @@ export const useGameStore = create<GameState & GameActions>()(
               isDiscardingMode: true
             });
           } else {
-            const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
             set({
               players: updatedPlayers,
               tokens: updatedBank,
               board: updatedBoard,
               decks: updatedDecks,
-              nobles: updatedNobles,
-              currentPlayerIndex: nextPlayerIndex,
-              turn: nextPlayerIndex === 0 ? turn + 1 : turn
+              nobles: updatedNobles
             });
+            get().nextTurn();
           }
         }
       },
 
       buyCard: (card: Card, isReserved: boolean = false) => {
-        const { players, currentPlayerIndex, tokens, board, decks, turn, checkNobles } = get();
+        const { players, currentPlayerIndex, tokens, board, decks, checkNobles } = get();
         const currentPlayer = players[currentPlayerIndex];
 
         const costEntries = Object.entries(card.cost) as [Exclude<GemColor, "gold">, number][];
@@ -376,16 +417,14 @@ export const useGameStore = create<GameState & GameActions>()(
           }
         }
 
-        const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
         set({
           players: updatedPlayers,
           tokens: updatedBank,
           board: updatedBoard,
           decks: updatedDecks,
-          nobles: updatedNobles,
-          currentPlayerIndex: nextPlayerIndex,
-          turn: nextPlayerIndex === 0 ? turn + 1 : turn
+          nobles: updatedNobles
         });
+        get().nextTurn();
       },
     }),
     {

@@ -7,6 +7,7 @@ import GameHeader from "@/components/GameHeader";
 import GameBoard from "@/components/GameBoard";
 import GameBank from "@/components/GameBank";
 import PlayerDashboard from "@/components/PlayerDashboard";
+import GameResult from "@/components/GameResult";
 
 export default function GamePlay() {
   const searchParams = useSearchParams();
@@ -33,6 +34,8 @@ export default function GamePlay() {
           <PlayerDashboard />
         </aside>
       </div>
+
+      <GameResult />
     </main>
   );
 }
