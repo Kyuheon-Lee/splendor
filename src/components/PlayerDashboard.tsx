@@ -35,7 +35,7 @@ export default function PlayerDashboard() {
             className={`p-6 rounded-3xl border-2 transition-all duration-500 relative overflow-hidden flex flex-col gap-4 ${
               isCurrent 
               ? isDiscardingMode 
-                ? 'bg-red-900/20 border-red-500 shadow-[0_0_40px_rgba(239,68,68,0.3)] scale-105 z-50'
+                ? 'bg-amber-900/20 border-amber-500 shadow-[0_0_40px_rgba(245,158,11,0.3)]'
                 : 'bg-zinc-800 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)]' 
               : 'bg-zinc-800/40 border-zinc-700 opacity-60'
             }`}
@@ -91,7 +91,7 @@ export default function PlayerDashboard() {
                 <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Essence Inventory</span>
                 <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border transition-colors ${
                   playerTokenTotal > 10 
-                  ? 'bg-red-500 text-white border-red-400 animate-pulse' 
+                  ? 'bg-amber-500 text-white border-amber-400 animate-pulse' 
                   : 'bg-zinc-900 border-zinc-700 text-zinc-400'
                 }`}>
                   {playerTokenTotal} / 10
@@ -100,10 +100,6 @@ export default function PlayerDashboard() {
               
               <div className="grid grid-cols-6 gap-2 bg-black/20 p-2 rounded-xl border border-white/5">
                  {Object.entries(player.tokens).map(([color, count]) => {
-                   const theme = color === 'gold' 
-                     ? { bg: "bg-amber-400" } 
-                     : ELEMENT_THEMES[color];
-
                    return (
                      <button 
                        key={color} 
@@ -112,7 +108,7 @@ export default function PlayerDashboard() {
                          e.stopPropagation();
                          discardToken(color as GemColor);
                        }}
-                       className={`flex flex-col items-center gap-1 group/token transition-all ${isCurrent && isDiscardingMode && (count as number) > 0 ? 'hover:scale-125 cursor-pointer p-1 bg-red-500/10 rounded-lg ring-1 ring-red-500/50' : 'cursor-default'}`}
+                       className={`flex flex-col items-center gap-1 group/token transition-all ${isCurrent && isDiscardingMode && (count as number) > 0 ? 'hover:scale-125 cursor-pointer p-1 bg-white/5 rounded-lg ring-1 ring-white/20' : 'cursor-default'}`}
                      >
                        <div className={`w-full h-1.5 rounded-full transition-all ${
                          color === 'white' ? 'bg-slate-100' : 
@@ -120,8 +116,8 @@ export default function PlayerDashboard() {
                          color === 'green' ? 'bg-emerald-500' :
                          color === 'red' ? 'bg-orange-600' :
                          color === 'black' ? 'bg-zinc-900' : 'bg-amber-400'
-                       } ${isCurrent && isDiscardingMode && (count as number) > 0 ? 'h-2.5 bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : ''}`} />
-                       <span className={`text-xs font-black ${isCurrent && isDiscardingMode && (count as number) > 0 ? 'text-red-400' : isCurrent ? 'text-white' : 'text-zinc-500'}`}>
+                       } ${isCurrent && isDiscardingMode && (count as number) > 0 ? 'h-2.5 ring-2 ring-white/30 shadow-[0_0_10px_rgba(255,255,255,0.2)]' : ''}`} />
+                       <span className={`text-xs font-black ${isCurrent && isDiscardingMode && (count as number) > 0 ? 'text-white underline decoration-white/30' : isCurrent ? 'text-white' : 'text-zinc-500'}`}>
                          {count}
                        </span>
                      </button>
@@ -202,13 +198,16 @@ export default function PlayerDashboard() {
 
             {/* 반납 모드 오버레이 (클릭 방해 금지) */}
             {isCurrent && isDiscardingMode && (
-              <div className="absolute inset-0 bg-red-600/5 backdrop-blur-[1px] pointer-events-none z-10 flex items-center justify-center">
-                <div className="bg-zinc-900 border border-red-500 px-4 py-2 rounded-full shadow-2xl animate-bounce">
-                  <span className="text-red-500 font-black text-xs uppercase tracking-widest">
-                    Discard {tokensToDiscard} Essences!
-                  </span>
+              <>
+                <div className="absolute inset-0 bg-amber-600/5 backdrop-blur-[0.5px] pointer-events-none z-10" />
+                <div className="absolute top-4 right-4 pointer-events-none z-30">
+                  <div className="bg-zinc-900 border border-amber-500 px-3 py-1.5 rounded-full shadow-2xl animate-pulse">
+                    <span className="text-amber-500 font-black text-[10px] uppercase tracking-widest whitespace-nowrap">
+                      Discard {tokensToDiscard} Essences!
+                    </span>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         );

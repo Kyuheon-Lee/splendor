@@ -357,8 +357,8 @@ export const useGameStore = create<GameState & GameActions>()(
 
         updatedPlayers[currentPlayerIndex] = updatedPlayer;
 
-        let updatedBoard = { ...board };
-        let updatedDecks = { ...decks };
+        const updatedBoard = { ...board };
+        const updatedDecks = { ...decks };
 
         if (!isReserved) {
           const levelBoard = [...updatedBoard[card.level]];
